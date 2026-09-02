@@ -10,6 +10,7 @@ export JUPYTER_ENV=/opt/venvs/jupyter
 
 NGINX_PID_FILE="${RUN_DIR}/nginx.pid"
 JUPYTER_PID_FILE="${RUN_DIR}/jupyter.pid"
+SSHD_PID_FILE="${RUN_DIR}/sshd.pid"
 
 log() { echo "[$(date -u +%H:%M:%S)] $*"; }
 
@@ -108,6 +109,53 @@ stop_jupyter() {
             sleep 0.2
         done
         rm -f "${JUPYTER_PID_FILE}"
+    fi
+}
+
+configure_ssh() {
+    local ssh_dir="${CONFIG_DIR}/ssh"
+    mkdir -p "${ssh_dir}" /run/sshd /root/.ssh
+    chmod 700 /root/.ssh
+
+    # Host keys live on the persistent volume so they're generated once and
+    # reused across restarts (no "host key changed" warnings on reconnect).
+    for t in rsa ed25519; do
+        if [ ! -f "${ssh_dir}/ssh_host_${t}_key" ]; then
+            log "generating ssh host key: ${t}"
+            ssh-keygen -q -t "${t}" -f "${ssh_dir}/ssh_host_${t}_key" -N ""
+        fi
+    done
+
+    # vast.ai injects the account's SSH public key(s) via $PUBLIC_KEY.
+    : > /root/.ssh/authorized_keys
+    for var in PUBLIC_KEY SSH_PUBLIC_KEY; do
+        if [ -n "${!var:-}" ]; then
+            printf '%s\n' "${!var}" >> /root/.ssh/authorized_keys
+        fi
+    done
+    chmod 600 /root/.ssh/authorized_keys
+}
+
+start_sshd() {
+    if pid_alive "${SSHD_PID_FILE}"; then
+        log "sshd already running (pid $(cat "${SSHD_PID_FILE}"))"
+        return 0
+    fi
+    configure_ssh
+    log "starting sshd on port 22"
+    /usr/sbin/sshd \
+        -o "HostKey=${CONFIG_DIR}/ssh/ssh_host_rsa_key" \
+        -o "HostKey=${CONFIG_DIR}/ssh/ssh_host_ed25519_key" \
+        -o "PermitRootLogin=prohibit-password" \
+        -o "PasswordAuthentication=no" \
+        -o "PidFile=${SSHD_PID_FILE}"
+}
+
+stop_sshd() {
+    if pid_alive "${SSHD_PID_FILE}"; then
+        log "stopping sshd"
+        kill "$(cat "${SSHD_PID_FILE}")" 2>/dev/null || true
+        rm -f "${SSHD_PID_FILE}"
     fi
 }
 

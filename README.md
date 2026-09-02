@@ -12,6 +12,8 @@ con o sin GPU.
 - CLIs de IA: `claude`, `gemini`, `codex` (vía npm/Node 22).
 - Dev tools: git, build-essential, neovim, tmux, ripgrep, fzf, jq, htop, ncdu, tree.
 - Transferencia de datos: rclone, awscli v2, gsutil, huggingface-cli (`hf`).
+- `sshd` en el puerto 22, con la key pública que vast.ai inyecta por
+  `$PUBLIC_KEY` (así el botón "Connect via SSH" de vast.ai funciona).
 - Nada de librerías Python de proyecto preinstaladas (numpy/pandas/torch/etc.)
   — eso lo instala cada quien con `uv` al bajar su repo.
 
@@ -92,6 +94,10 @@ docker pull ghcr.io/mrbungie/datascience-container:gpu
 3. Montá el disco persistente de la instancia en `/workspace`.
 4. Para instancias GPU, vast.ai ya te da el runtime nvidia — no hace falta
    nada extra aparte de usar la imagen `gpu`.
+5. SSH: vast.ai pasa la(s) key(s) pública(s) de tu cuenta a la instancia por
+   la env var `PUBLIC_KEY` — el `entrypoint` las escribe en
+   `/root/.ssh/authorized_keys` y levanta `sshd` en el puerto 22 solo. No
+   hace falta nada manual siempre que el template exponga el puerto 22.
 
 ## Extender / reiniciar sin recrear el contenedor
 
@@ -127,4 +133,3 @@ pierde tus cambios.
   plano en el puerto 80.
 - `gh` (GitHub CLI) si además de `git` querés manejar PRs/issues desde la
   terminal.
-- SSH server propio — vast.ai ya da acceso SSH a la instancia por su cuenta.

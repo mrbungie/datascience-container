@@ -45,6 +45,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     fzf \
     nginx \
     openssl \
+    openssh-server \
     python3 \
     python3-venv \
     locales \
@@ -111,6 +112,6 @@ RUN chmod +x /opt/scripts/*.sh
 WORKDIR ${WORKSPACE}
 VOLUME ["${WORKSPACE}"]
 
-EXPOSE 80 443 8888
+EXPOSE 80 443 8888 22
 
 ENTRYPOINT ["/opt/scripts/entrypoint.sh"]

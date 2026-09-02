@@ -5,6 +5,7 @@ source "${DIR}/lib.sh"
 
 seed_config
 configure_hf_token
+start_sshd
 start_nginx
 start_jupyter
 
@@ -12,6 +13,7 @@ term_handler() {
     log "shutting down"
     stop_jupyter
     stop_nginx
+    stop_sshd
     exit 0
 }
 trap term_handler SIGTERM SIGINT
