@@ -10,7 +10,7 @@ con o sin GPU.
 - `nginx` como reverse proxy delante de Jupyter, con soporte de websockets.
 - `duckdb` — se baja la última release de GitHub en el momento del build.
 - CLIs de IA: `claude`, `gemini`, `codex` (vía npm/Node 22).
-- Dev tools: git, build-essential, neovim, tmux, ripgrep, fzf, jq, htop, ncdu, tree.
+- Dev tools: git, gh (GitHub CLI), build-essential, neovim, tmux, ripgrep, fzf, jq, htop, ncdu, tree.
 - Transferencia de datos: rclone, awscli v2, gsutil, huggingface-cli (`hf`).
 - `sshd` en el puerto 22, con la key pública que vast.ai inyecta por
   `$PUBLIC_KEY` (así el botón "Connect via SSH" de vast.ai funciona).
@@ -131,5 +131,3 @@ pierde tus cambios.
   de sumar con `uv tool install nvitop` si lo necesitás.
 - TLS/HTTPS en nginx (certs self-signed o Let's Encrypt) — hoy sirve HTTP
   plano en el puerto 80.
-- `gh` (GitHub CLI) si además de `git` querés manejar PRs/issues desde la
-  terminal.
