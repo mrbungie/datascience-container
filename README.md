@@ -11,9 +11,14 @@ con o sin GPU.
 - `duckdb` — se baja la última release de GitHub en el momento del build.
 - CLIs de IA: `claude`, `gemini`, `codex` (vía npm/Node 22).
 - Dev tools: git, gh (GitHub CLI), build-essential, neovim, tmux, ripgrep, fzf, jq, htop, ncdu, tree.
-- Transferencia de datos: rclone, awscli v2, gsutil, huggingface-cli (`hf`).
-- `sshd` en el puerto 22, con la key pública que vast.ai inyecta por
-  `$PUBLIC_KEY` (así el botón "Connect via SSH" de vast.ai funciona).
+- Transferencia de datos: rclone, awscli v2, gsutil, huggingface-cli (`hf`), `vastai` (CLI de vast.ai).
+- `cron`, con un crontab persistente en `/workspace/config/cron/crontab` y
+  un watchdog opcional de auto-apagado por inactividad (ver más abajo).
+- `tini` como PID 1 (vía `ENTRYPOINT`) — reaping correcto de procesos zombie.
+- `sshd` propio en el puerto 22, con la key pública que vast.ai inyecta por
+  `$PUBLIC_KEY`. Solo se usa cuando el `ENTRYPOINT` de esta imagen es el que
+  manda (`docker run` directo, o launch mode "Entrypoint" en vast.ai) — ver
+  "En vast.ai" más abajo para el modo SSH.
 - Nada de librerías Python de proyecto preinstaladas (numpy/pandas/torch/etc.)
   — eso lo instala cada quien con `uv` al bajar su repo.
 
@@ -86,18 +91,79 @@ docker pull ghcr.io/mrbungie/datascience-container:gpu
 
 ## En vast.ai
 
+vast.ai tiene tres launch modes (**Entrypoint**, **SSH**, **Jupyter**). Los
+modos SSH y Jupyter inyectan su propio script de setup y **reemplazan el
+`ENTRYPOINT` de la imagen** — si vas a usar alguno de esos dos, no confíes en
+que nuestro `entrypoint.sh` corra solo.
+
+Pasos comunes a cualquier modo:
 1. Pusheá la imagen a un registry (Docker Hub, GHCR, etc.) y usala como
-   template, o subí el Dockerfile como "on-start" build si tu template lo
-   permite.
+   template.
 2. Exponé el puerto 80 (nginx) en el template — vast.ai lo mapea a un puerto
    público.
 3. Montá el disco persistente de la instancia en `/workspace`.
 4. Para instancias GPU, vast.ai ya te da el runtime nvidia — no hace falta
    nada extra aparte de usar la imagen `gpu`.
-5. SSH: vast.ai pasa la(s) key(s) pública(s) de tu cuenta a la instancia por
-   la env var `PUBLIC_KEY` — el `entrypoint` las escribe en
-   `/root/.ssh/authorized_keys` y levanta `sshd` en el puerto 22 solo. No
-   hace falta nada manual siempre que el template exponga el puerto 22.
+
+### Opción A — launch mode "Entrypoint"
+
+Nuestro `ENTRYPOINT` (`tini` + `entrypoint.sh`) corre tal cual: levanta
+sshd propio (usando `$PUBLIC_KEY`), nginx, jupyter y cron. Es el modo más
+parecido a "Run local" de arriba. No hace falta configurar nada más en el
+template.
+
+### Opción B — launch mode "SSH" + onstart
+
+vast.ai levanta su propio sshd (con `$PUBLIC_KEY`) y pisa nuestro
+`ENTRYPOINT`, así que el resto de los servicios (nginx, jupyter, cron) hay
+que arrancarlos desde el campo **"On-start Script"** del template. Poné la
+invocación explícita, no solo la ruta (el campo puede no respetar shebang/
+permisos de ejecución):
+
+```bash
+bash /opt/scripts/onstart.sh
+```
+
+Ese script hace lo mismo que `entrypoint.sh` menos sshd (que ya lo maneja
+vast.ai) — arranca nginx, jupyter y cron, y no bloquea (todo queda corriendo
+en background). También vuelca el entorno actual a `/etc/environment`
+(`sync_env_to_etc_environment` en `lib.sh`), porque vast.ai a veces no
+propaga sus predefined vars (`$CONTAINER_ID`, `$CONTAINER_API_KEY`, etc.) a
+sesiones SSH posteriores — con esto quedan disponibles igual en cualquier
+login nuevo. Si por error corrés `/opt/scripts/start.sh all` o
+`restart.sh all` en este modo, el intento de levantar nuestro propio sshd
+detecta el puerto 22 ya ocupado y lo salta solo (no rompe nada, solo loguea
+un aviso).
+
+### Auto-apagado por inactividad (opcional)
+
+`scripts/idle_shutdown.sh` corre por cron (en cualquiera de los dos modos)
+si seteás `IDLE_SHUTDOWN_ENABLE=1` como env var del template. Chequea CPU,
+RAM, y si hay GPU, utilization% y VRAM%, con umbrales configurables:
+
+```
+IDLE_SHUTDOWN_ENABLE=1
+IDLE_CHECK_INTERVAL_MINUTES=5     # cada cuánto chequea (default 5)
+IDLE_GRACE_MINUTES=30             # minutos seguidos por debajo del umbral antes de actuar (default 30)
+IDLE_CPU_THRESHOLD_PCT=15
+IDLE_RAM_THRESHOLD_PCT=20
+IDLE_GPU_THRESHOLD_PCT=5
+IDLE_VRAM_THRESHOLD_PCT=10
+IDLE_ACTION=exit                  # "exit" (para la instancia) o "notify" (solo loguea/webhook)
+IDLE_WEBHOOK_URL=https://...      # opcional, aviso al detectar idle
+```
+
+La acción `exit` intenta `vastai stop instance $CONTAINER_ID` (usa las env
+vars `CONTAINER_ID`/`CONTAINER_API_KEY` que vast.ai debería inyectar solo;
+si en tu instancia no aparecen, corré `env | grep -i container` para
+confirmarlo — la doc de vast.ai dice que a veces hay que exportarlas a mano
+a `/etc/environment` en sesiones SSH). Si no hay `CONTAINER_ID` o el CLI
+`vastai` no está disponible, cae a `kill -TERM 1` — que **solo sirve** en
+modo Entrypoint (ahí sí somos PID 1); en modo SSH/onstart no hace nada útil,
+así que probá primero con `IDLE_ACTION=notify` para confirmar que detecta
+bien la inactividad antes de dejarlo apagar la instancia sola.
+
+Logs en `/workspace/logs/idle-shutdown.log`.
 
 ## Extender / reiniciar sin recrear el contenedor
 
@@ -112,7 +178,11 @@ vi /workspace/config/nginx/conf.d/mi-servicio.conf
 vi /workspace/config/jupyter/jupyter_server_config.py
 /opt/scripts/restart.sh jupyter
 
-# start/stop individual o de todo
+# tus propios cronjobs, o ajustar los thresholds de idle-shutdown a mano
+vi /workspace/config/cron/crontab
+/opt/scripts/restart.sh cron
+
+# start/stop individual o de todo (en modo onstart, evitá "all": ver arriba)
 /opt/scripts/stop.sh nginx
 /opt/scripts/start.sh nginx
 /opt/scripts/restart.sh all

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Usage: restart.sh [nginx|jupyter|sshd|all]
+# Usage: restart.sh [nginx|jupyter|sshd|cron|all]
 #
 # For nginx this reloads config (conf.d additions, edits) with zero
 # downtime. For jupyter it does a real stop+start since the server process
@@ -22,12 +22,18 @@ case "${1:-all}" in
         stop_sshd
         start_sshd
         ;;
+    cron)
+        stop_cron
+        start_cron
+        ;;
     all)
         reload_nginx
         stop_jupyter
         start_jupyter
         stop_sshd
         start_sshd
+        stop_cron
+        start_cron
         ;;
-    *) echo "usage: $0 [nginx|jupyter|sshd|all]"; exit 1 ;;
+    *) echo "usage: $0 [nginx|jupyter|sshd|cron|all]"; exit 1 ;;
 esac

@@ -46,6 +46,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     nginx \
     openssl \
     openssh-server \
+    cron \
+    tini \
     python3 \
     python3-venv \
     locales \
@@ -113,6 +115,12 @@ RUN uv tool install gsutil \
   && uv tool install "huggingface_hub[cli]"
 ENV PATH=/root/.local/bin:$PATH
 
+# vast.ai CLI — self-contained installer, no sudo/pip. Lets scripts inside
+# the container call `vastai stop instance $CONTAINER_ID` (e.g. the
+# idle-shutdown watchdog) using the auto-injected $CONTAINER_ID /
+# $CONTAINER_API_KEY env vars.
+RUN curl -fsSL https://vast.ai/install.sh | VASTAI_NO_MODIFY_PATH=1 bash
+
 # ---------------------------------------------------------------------------
 # Runtime layout
 # ---------------------------------------------------------------------------
@@ -126,4 +134,4 @@ VOLUME ["${WORKSPACE}"]
 
 EXPOSE 80 443 8888 22
 
-ENTRYPOINT ["/opt/scripts/entrypoint.sh"]
+ENTRYPOINT ["/usr/bin/tini", "--", "/opt/scripts/entrypoint.sh"]

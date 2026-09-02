@@ -1,0 +1,11 @@
+# Crontab for the datascience container, loaded as root's crontab every
+# time cron (re)starts. Edit this file, then run:
+#   /opt/scripts/restart.sh cron
+#
+# Standard cron syntax: minute hour day month weekday command
+#
+# cron has no mail transport agent configured, so job output goes nowhere
+# unless you redirect it. Send it to the container's logs so `docker logs`
+# and `tail -F` on the container pick it up:
+#   */15 * * * * /workspace/scripts/my_job.sh >> /workspace/logs/cron.log 2>&1
+MAILTO=""
